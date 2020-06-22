@@ -1,3 +1,5 @@
+""" auto welcome and left messages """
+
 # Copyright (C) 2020 by UsergeTeam@Github, < https://github.com/UsergeTeam >.
 #
 # This file is part of < https://github.com/UsergeTeam/Userge > project,
@@ -52,8 +54,10 @@ async def _init() -> None:
         "{tr}setwelcome Hi {mention}, <b>Welcome</b> to {chat} chat\n"
         "or reply to supported media",
         "reply {tr}setwelcome to text message or supported media with text"],
-    'others': "**max media size limt** : 10MB !"})
+    'others': "**max media size limt** : 10MB !"},
+    allow_channels=False, allow_bots=False, allow_private=False)
 async def setwel(msg: Message):
+    """ set welcome message """
     await raw_set(msg, 'Welcome', WELCOME_COLLECTION, WELCOME_CHATS)
 
 
@@ -73,85 +77,106 @@ async def setwel(msg: Message):
         "{tr}setleft {flname}, Why you left :(\n"
         "or reply to supported media",
         "reply {tr}setleft to text message or supported media with text"],
-    'others': "**max media size limt** : 10MB !"})
+    'others': "**max media size limt** : 10MB !"},
+    allow_channels=False, allow_bots=False, allow_private=False)
 async def setleft(msg: Message):
+    """ set left message """
     await raw_set(msg, 'Left', LEFT_COLLECTION, LEFT_CHATS)
 
 
 @userge.on_cmd("nowelcome", about={
-    'header': "Disables and removes welcome message in the current chat"})
+    'header': "Disables and removes welcome message in the current chat"},
+    allow_channels=False, allow_bots=False, allow_private=False)
 async def nowel(msg: Message):
+    """ disable welcome message """
     await raw_no(msg, 'Welcome', WELCOME_COLLECTION, WELCOME_CHATS)
 
 
 @userge.on_cmd("noleft", about={
-    'header': "Disables and removes left message in the current chat"})
+    'header': "Disables and removes left message in the current chat"},
+    allow_channels=False, allow_bots=False, allow_private=False)
 async def noleft(msg: Message):
+    """ disable left message """
     await raw_no(msg, 'Left', LEFT_COLLECTION, LEFT_CHATS)
 
 
 @userge.on_cmd("dowelcome", about={
-    'header': "Turns on welcome message in the current chat"})
+    'header': "Turns on welcome message in the current chat"},
+    allow_channels=False, allow_bots=False, allow_private=False)
 async def dowel(msg: Message):
+    """ enable welcome message """
     await raw_do(msg, 'Welcome', WELCOME_COLLECTION, WELCOME_CHATS)
 
 
 @userge.on_cmd("doleft", about={
-    'header': "Turns on left message in the current chat :)"})
+    'header': "Turns on left message in the current chat :)"},
+    allow_channels=False, allow_bots=False, allow_private=False)
 async def doleft(msg: Message):
+    """ enable left message """
     await raw_do(msg, 'Left', LEFT_COLLECTION, LEFT_CHATS)
 
 
 @userge.on_cmd("delwelcome", about={
-    'header': "Delete welcome message in the current chat :)"})
+    'header': "Delete welcome message in the current chat :)"},
+    allow_channels=False, allow_bots=False, allow_private=False)
 async def delwel(msg: Message):
+    """ delete welcome message """
     await raw_del(msg, 'Welcome', WELCOME_COLLECTION, WELCOME_CHATS)
 
 
 @userge.on_cmd("delleft", about={
-    'header': "Delete left message in the current chat :)"})
+    'header': "Delete left message in the current chat :)"},
+    allow_channels=False, allow_bots=False, allow_private=False)
 async def delleft(msg: Message):
+    """ delete left messaage """
     await raw_del(msg, 'Left', LEFT_COLLECTION, LEFT_CHATS)
 
 
 @userge.on_cmd("lswelcome", about={
-    'header': "Shows the activated chats for welcome"})
+    'header': "Shows the activated chats for welcome"},
+    allow_channels=False, allow_bots=False, allow_private=False)
 async def lswel(msg: Message):
+    """ view all welcome messages """
     await raw_ls(msg, 'Welcome', WELCOME_COLLECTION)
 
 
 @userge.on_cmd("lsleft", about={
-    'header': "Shows the activated chats for left"})
+    'header': "Shows the activated chats for left"},
+    allow_channels=False, allow_bots=False, allow_private=False)
 async def lsleft(msg: Message):
+    """ view all left messages """
     await raw_ls(msg, 'Left', LEFT_COLLECTION)
 
 
 @userge.on_cmd("vwelcome", about={
-    'header': "Shows welcome message in current chat"})
+    'header': "Shows welcome message in current chat"},
+    allow_channels=False, allow_bots=False, allow_private=False)
 async def viewwel(msg: Message):
+    """ view welcome in current chat """
     await raw_view(msg, 'Welcome', WELCOME_COLLECTION)
 
 
 @userge.on_cmd("vleft", about={
-    'header': "Shows left message in current chat"})
+    'header': "Shows left message in current chat"},
+    allow_channels=False, allow_bots=False, allow_private=False)
 async def viewleft(msg: Message):
+    """ view left in current chat """
     await raw_view(msg, 'Left', LEFT_COLLECTION)
 
 
 @userge.on_new_member(WELCOME_CHATS)
 async def saywel(msg: Message):
+    """ welcome message handler """
     await raw_say(msg, 'Welcome', WELCOME_COLLECTION)
 
 
 @userge.on_left_member(LEFT_CHATS)
 async def sayleft(msg: Message):
+    """ left message handler """
     await raw_say(msg, 'Left', LEFT_COLLECTION)
 
 
 async def raw_set(message: Message, name, collection, chats):
-    if message.chat.type in ["private", "bot", "channel"]:
-        await message.err(text=f'Are you high XO\nSet {name} in a group chat')
-        return
     replied = message.reply_to_message
     string = message.input_or_reply_str
     file_ = ''

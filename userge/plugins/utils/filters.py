@@ -1,3 +1,5 @@
+""" setup filters """
+
 # Copyright (C) 2020 by UsergeTeam@Github, < https://github.com/UsergeTeam >.
 #
 # This file is part of < https://github.com/UsergeTeam/Userge > project,
@@ -35,8 +37,10 @@ async def _init() -> None:
         _filter_updater(flt['chat_id'], flt['name'], flt['content'])
 
 
-@userge.on_cmd("filters", about={'header': "List all saved filters"})
+@userge.on_cmd("filters", about={
+    'header': "List all saved filters in current chat"}, allow_channels=False)
 async def filters_active(message: Message) -> None:
+    """ list filters in current chat """
     out = ''
     if message.chat.id in FILTERS_DATA:
         for filter_ in FILTERS_DATA[message.chat.id]:
@@ -49,8 +53,9 @@ async def filters_active(message: Message) -> None:
 
 @userge.on_cmd("delfilter", about={
     'header': "Deletes a filter by name",
-    'usage': "{tr}delfilter [filter name]"})
+    'usage': "{tr}delfilter [filter name]"}, allow_channels=False)
 async def delete_filters(message: Message) -> None:
+    """ delete filter in current chat """
     filter_ = message.input_str
     if not filter_:
         out = "`Wrong syntax`\nNo arguements"
@@ -66,8 +71,10 @@ async def delete_filters(message: Message) -> None:
 @userge.on_cmd(r"addfilter (\w[^\|]*)(?:\s?\|\s?([\s\S]+))?",
                about={
                    'header': "Adds a filter by name",
-                   'usage': "{tr}addfilter [filter name] | [content | reply to msg]"})
+                   'usage': "{tr}addfilter [filter name] | [content | reply to msg]"},
+               allow_channels=False)
 async def add_filter(message: Message) -> None:
+    """ add filter to current chat """
     filter_ = message.matches[0].group(1).strip()
     content = message.matches[0].group(2)
     if message.reply_to_message:
@@ -89,6 +96,7 @@ async def add_filter(message: Message) -> None:
 
 @userge.on_filters(~Filters.me & Filters.text & FILTERS_CHATS, group=1)
 async def chat_filter(message: Message) -> None:
+    """ filter handler """
     input_text = message.text.strip()
     for name in FILTERS_DATA[message.chat.id]:
         if (input_text == name
