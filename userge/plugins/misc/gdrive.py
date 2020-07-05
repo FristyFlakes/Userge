@@ -19,7 +19,7 @@ from json import dumps
 from functools import wraps
 from datetime import datetime
 from mimetypes import guess_type
-from urllib.parse import unquote_plus
+from urllib.parse import unquote_plus, quote
 
 from httplib2 import Http
 from pySmartDL import SmartDL
@@ -85,7 +85,7 @@ async def _refresh_creds() -> None:
 
 
 def creds_dec(func):
-    """ decorator for check _CREDS """
+    """ decorator for check CREDS """
     @wraps(func)
     async def wrapper(self):
         if _CREDS:
@@ -175,15 +175,49 @@ class _GDrive:
                                            supportsTeamDrives=True).execute()
         _LOG.info("Set Permission : %s for Google-Drive File : %s", permissions, file_id)
 
+    def _get_file_path(self, file_id: str, file_name: str) -> str:
+        tmp_path = [file_name]
+        while True:
+            response = self._service.files().get(
+                fileId=file_id, fields='parents', supportsTeamDrives=True).execute()
+            if not response:
+                break
+            file_id = response['parents'][0]
+            response = self._service.files().get(
+                fileId=file_id, fields='name', supportsTeamDrives=True).execute()
+            tmp_path.append(response['name'])
+        return '/'.join(reversed(tmp_path[:-1]))
+
+    def _get_output(self, file_id: str) -> str:
+        file_ = self._service.files().get(
+            fileId=file_id, fields="id, name, size, mimeType", supportsTeamDrives=True).execute()
+        file_id = file_.get('id')
+        file_name = file_.get('name')
+        file_size = humanbytes(int(file_.get('size', 0)))
+        mime_type = file_.get('mimeType')
+        if mime_type == G_DRIVE_DIR_MIME_TYPE:
+            out = G_DRIVE_FOLDER_LINK.format(file_id, file_name)
+        else:
+            out = G_DRIVE_FILE_LINK.format(file_id, file_name, file_size)
+        if Config.G_DRIVE_INDEX_LINK:
+            link = os.path.join(
+                Config.G_DRIVE_INDEX_LINK.rstrip('/'),
+                quote(self._get_file_path(file_id, file_name)))
+            if mime_type == G_DRIVE_DIR_MIME_TYPE:
+                link += '/'
+            out += f"\n👥 __[Shareable Link]({link})__"
+        return out
+
     def _upload_file(self, file_path: str, parent_id: str) -> str:
         if self._is_canceled:
             raise ProcessCanceled
         mime_type = guess_type(file_path)[0] or "text/plain"
         file_name = os.path.basename(file_path)
+        file_size = os.path.getsize(file_path)
         body = {"name": file_name, "mimeType": mime_type, "description": "Uploaded using Userge"}
         if parent_id:
             body["parents"] = [parent_id]
-        if os.path.getsize(file_path) == 0:
+        if file_size == 0:
             media_body = MediaFileUpload(file_path, mimetype=mime_type, resumable=False)
             u_file_obj = self._service.files().create(body=body, media_body=media_body,
                                                       supportsTeamDrives=True).execute()
@@ -232,14 +266,9 @@ class _GDrive:
         if not Config.G_DRIVE_IS_TD:
             self._set_permission(file_id)
         self._completed += 1
-        drive_file = self._service.files().get(fileId=file_id, fields='id, name, size',
-                                               supportsTeamDrives=True).execute()
-        file_id = drive_file.get('id')
-        file_name = drive_file.get("name")
-        file_size = humanbytes(int(drive_file.get('size', 0)))
         _LOG.info(
             "Created Google-Drive File => Name: %s ID: %s Size: %s", file_name, file_id, file_size)
-        return G_DRIVE_FILE_LINK.format(file_id, file_name, file_size)
+        return file_id
 
     def _create_drive_dir(self, dir_name: str, parent_id: str) -> str:
         if self._is_canceled:
@@ -277,12 +306,12 @@ class _GDrive:
     def _upload(self, file_name: str) -> None:
         try:
             if os.path.isfile(file_name):
-                self._output = self._upload_file(file_name, self._parent_id)
+                file_id = self._upload_file(file_name, self._parent_id)
             else:
                 folder_name = os.path.basename(os.path.abspath(file_name))
-                dir_id = self._create_drive_dir(folder_name, self._parent_id)
-                self._upload_dir(file_name, dir_id)
-                self._output = G_DRIVE_FOLDER_LINK.format(dir_id, folder_name)
+                file_id = self._create_drive_dir(folder_name, self._parent_id)
+                self._upload_dir(file_name, file_id)
+            self._output = self._get_output(file_id)
         except HttpError as h_e:
             _LOG.exception(h_e)
             self._output = h_e
@@ -441,23 +470,14 @@ class _GDrive:
     def _copy(self, file_id: str) -> None:
         try:
             drive_file = self._service.files().get(
-                fileId=file_id, fields="id, name, mimeType", supportsTeamDrives=True).execute()
+                fileId=file_id, fields="name, mimeType", supportsTeamDrives=True).execute()
             if drive_file['mimeType'] == G_DRIVE_DIR_MIME_TYPE:
                 dir_id = self._create_drive_dir(drive_file['name'], self._parent_id)
                 self._copy_dir(file_id, dir_id)
                 ret_id = dir_id
             else:
                 ret_id = self._copy_file(file_id, self._parent_id)
-            drive_file = self._service.files().get(
-                fileId=ret_id, fields="id, name, mimeType, size", supportsTeamDrives=True).execute()
-            mime_type = drive_file['mimeType']
-            file_name = drive_file['name']
-            file_id = drive_file['id']
-            if mime_type == G_DRIVE_DIR_MIME_TYPE:
-                self._output = G_DRIVE_FOLDER_LINK.format(file_id, file_name)
-            else:
-                file_size = humanbytes(int(drive_file.get('size', 0)))
-                self._output = G_DRIVE_FILE_LINK.format(file_id, file_name, file_size)
+            self._output = self._get_output(ret_id)
         except HttpError as h_e:
             _LOG.exception(h_e)
             self._output = h_e
@@ -486,18 +506,12 @@ class _GDrive:
         drive_file = self._service.files().update(fileId=file_id,
                                                   addParents=self._parent_id,
                                                   removeParents=previous_parents,
-                                                  fields="id, name, mimeType, size, parents",
+                                                  fields="parents",
                                                   supportsTeamDrives=True).execute()
         _LOG.info("Moved file : %s => "
-                  "from : %s to : {drive_file['parents']} in Google-Drive",
+                  f"from : %s to : {drive_file['parents']} in Google-Drive",
                   file_id, previous_parents)
-        mime_type = drive_file['mimeType']
-        file_name = drive_file['name']
-        file_id = drive_file['id']
-        if mime_type == G_DRIVE_DIR_MIME_TYPE:
-            return G_DRIVE_FOLDER_LINK.format(file_id, file_name)
-        file_size = humanbytes(int(drive_file.get('size', 0)))
-        return G_DRIVE_FILE_LINK.format(file_id, file_name, file_size)
+        return self._get_output(file_id)
 
     @pool.run_in_thread
     def _delete(self, file_id: str) -> None:
@@ -577,7 +591,8 @@ class Worker(_GDrive):
         link = self._message.input_str
         if filter_str:
             link = self._message.filtered_input_str
-        found = re.search(r'https://drive.google.com/[\w\?\./&=]+([-\w]{33}|/0A[-\w]{17})', link)
+        found = re.search(
+            r'https://drive.google.com/[\w\?\./&=]+([-\w]{33}|(?<=/)0A[-\w]{17})', link)
         if found and 'folder' in link:
             out = (found.group(1), "folder")
         elif found:
@@ -618,11 +633,11 @@ class Worker(_GDrive):
             _AUTH_FLOW = None
             await asyncio.gather(
                 _set_creds(cred),
-                self._message.edit("`Saved GDrive Creds!`", del_in=3, log=True))
+                self._message.edit("`Saved GDrive Creds!`", del_in=3, log=__name__))
 
     async def clear(self) -> None:
         """ Clear Creds """
-        await self._message.edit(await _clear_creds(), del_in=3, log=True)
+        await self._message.edit(await _clear_creds(), del_in=3, log=__name__)
 
     async def set_parent(self) -> None:
         """ Set Parent id """
@@ -640,6 +655,20 @@ class Worker(_GDrive):
         global _PARENT_ID
         _PARENT_ID = ""
         await self._message.edit("`Parents Reset successfully`", del_in=5)
+
+    @creds_dec
+    async def share(self) -> None:
+        """ get shareable link """
+        await self._message.edit("`Loading GDrive Share...`")
+        file_id, _ = self._get_file_id()
+        try:
+            out = await pool.run_in_thread(self._get_output)(file_id)
+        except HttpError as h_e:
+            _LOG.exception(h_e)
+            await self._message.err(h_e._get_reason())
+            return
+        await self._message.edit(f"**Shareable Links**\n\n{out}",
+                                 disable_web_page_preview=True, log=__name__)
 
     @creds_dec
     async def search(self) -> None:
@@ -672,7 +701,7 @@ class Worker(_GDrive):
             await self._message.err(h_e._get_reason())
             return
         await self._message.edit(f"**Folder Created Successfully**\n\n{out}",
-                                 disable_web_page_preview=True, log=True)
+                                 disable_web_page_preview=True, log=__name__)
 
     @creds_dec
     async def list_folder(self) -> None:
@@ -710,7 +739,7 @@ class Worker(_GDrive):
             file_name = Config.DOWN_PATH
             if self._message.input_str:
                 file_name = os.path.join(Config.DOWN_PATH, self._message.input_str)
-            dl_loc = await userge.download_media(
+            dl_loc = await self._message.client.download_media(
                 message=replied,
                 file_name=file_name,
                 progress=progress,
@@ -807,7 +836,7 @@ class Worker(_GDrive):
             out = self._output
         else:
             out = "`failed to upload.. check logs?`"
-        await self._message.edit(out, disable_web_page_preview=True, log=True)
+        await self._message.edit(out, disable_web_page_preview=True, log=__name__)
 
     @creds_dec
     async def download(self) -> None:
@@ -837,7 +866,7 @@ class Worker(_GDrive):
             out = self._output
         else:
             out = "`failed to download.. check logs?`"
-        await self._message.edit(out, disable_web_page_preview=True, log=True)
+        await self._message.edit(out, disable_web_page_preview=True, log=__name__)
 
     @creds_dec
     async def copy(self) -> None:
@@ -868,7 +897,7 @@ class Worker(_GDrive):
             out = self._output
         else:
             out = "`failed to copy.. check logs?`"
-        await self._message.edit(out, disable_web_page_preview=True, log=True)
+        await self._message.edit(out, disable_web_page_preview=True, log=__name__)
 
     @creds_dec
     async def move(self) -> None:
@@ -885,7 +914,7 @@ class Worker(_GDrive):
             await self._message.err(h_e._get_reason())
         else:
             await self._message.edit(
-                f"`{file_id}` **Moved Successfully**\n\n{link}", log=True)
+                f"`{file_id}` **Moved Successfully**\n\n{link}", log=__name__)
 
     @creds_dec
     async def delete(self) -> None:
@@ -899,7 +928,7 @@ class Worker(_GDrive):
             await self._message.err(h_e._get_reason())
         else:
             await self._message.edit(
-                f"`{file_id}` **Deleted Successfully**", del_in=5, log=True)
+                f"`{file_id}` **Deleted Successfully**", del_in=5, log=__name__)
 
     @creds_dec
     async def empty(self) -> None:
@@ -912,7 +941,7 @@ class Worker(_GDrive):
             await self._message.err(h_e._get_reason())
         else:
             await self._message.edit(
-                "`Empty the Trash Successfully`", del_in=5, log=True)
+                "`Empty the Trash Successfully`", del_in=5, log=__name__)
 
     @creds_dec
     async def get(self) -> None:
@@ -1044,6 +1073,14 @@ async def gls_(message: Message):
 async def gmake_(message: Message):
     """ make folder """
     await Worker(message).make_folder()
+
+
+@userge.on_cmd("gshare", about={
+    'header': "Get Shareable Links for GDrive files",
+    'usage': "{tr}gshare [file_id | file/folder link]"})
+async def gshare_(message: Message):
+    """ share files """
+    await Worker(message).share()
 
 
 @userge.on_cmd("gup", about={
