@@ -21,6 +21,7 @@ from typing import List, Awaitable, Any, Optional
 import psutil
 
 from userge import logging, Config
+from userge.logbot import LogBot
 from userge.utils import time_formatter
 from userge.utils.exceptions import UsergeBotNotFound
 from userge.plugins import get_all_plugins
@@ -44,16 +45,18 @@ async def _complete_init_tasks() -> None:
 
 class _AbstractUserge(Methods, RawClient):
     @property
+    def is_bot(self) -> bool:
+        """ returns client is bot or not """
+        if self._bot is not None:
+            return hasattr(self, 'ubot')
+        if Config.BOT_TOKEN:
+            return True
+        return False
+
+    @property
     def uptime(self) -> str:
         """ returns userge uptime """
         return time_formatter(time.time() - _START_TIME)
-
-    @property
-    def bot(self) -> '_UsergeBot':
-        """ returns usergebot """
-        if self._bot is None:
-            raise UsergeBotNotFound("Need BOT_TOKEN ENV!")
-        return self._bot
 
     async def finalize_load(self) -> None:
         """ finalize the plugins load """
@@ -78,7 +81,7 @@ class _AbstractUserge(Methods, RawClient):
     async def _load_plugins(self) -> None:
         _IMPORTED.clear()
         _INIT_TASKS.clear()
-        _LOG.info(_LOG_STR, "Importing All Plugins")
+        LogBot.edit_last_msg("Importing All Plugins", _LOG.info, _LOG_STR)
         for name in get_all_plugins():
             try:
                 await self.load_plugin(name)
@@ -116,9 +119,8 @@ class _AbstractUserge(Methods, RawClient):
             _LOG.error(_LOG_STR, c_e)
         if update_req:
             _LOG.info(_LOG_STR, "Installing Requirements...")
-            os.system("pip3 install -U pip")
-            os.system("pip3 install -r requirements.txt")
-        os.execl(sys.executable, sys.executable, '-m', 'userge')
+            os.system("pip3 install -U pip && pip3 install -r requirements.txt")  # nosec
+        os.execl(sys.executable, sys.executable, '-m', 'userge')  # nosec
         sys.exit()
 
 
@@ -128,28 +130,35 @@ class _UsergeBot(_AbstractUserge):
         _LOG.info(_LOG_STR, "Setting UsergeBot Configs")
         super().__init__(session_name=":memory:", **kwargs)
 
+    @property
+    def ubot(self) -> 'Userge':
+        """ returns userbot """
+        return self._bot
+
 
 class Userge(_AbstractUserge):
     """ Userge, the userbot """
     def __init__(self, **kwargs) -> None:
         _LOG.info(_LOG_STR, "Setting Userge Configs")
-        if not (Config.HU_STRING_SESSION or Config.BOT_TOKEN):
-            print("Need HU_STRING_SESSION or BOT_TOKEN, Exiting...")
-            sys.exit()
         kwargs = {
             'api_id': Config.API_ID,
             'api_hash': Config.API_HASH,
             'workers': Config.WORKERS
         }
         if Config.BOT_TOKEN:
-            if not Config.OWNER_ID:
-                print("Need OWNER_ID, Exiting...")
-                sys.exit()
             kwargs['bot_token'] = Config.BOT_TOKEN
         if Config.HU_STRING_SESSION and Config.BOT_TOKEN:
-            kwargs['bot'] = _UsergeBot(**kwargs)
+            RawClient.DUAL_MODE = True
+            kwargs['bot'] = _UsergeBot(bot=self, **kwargs)
         kwargs['session_name'] = Config.HU_STRING_SESSION or ":memory:"
         super().__init__(**kwargs)
+
+    @property
+    def bot(self) -> '_UsergeBot':
+        """ returns usergebot """
+        if self._bot is None:
+            raise UsergeBotNotFound("Need BOT_TOKEN ENV!")
+        return self._bot
 
     async def start(self) -> None:
         """ start client and bot """
@@ -182,12 +191,12 @@ class Userge(_AbstractUserge):
             run(coro)
         else:
             _LOG.info(_LOG_STR, "Idling Userge")
+            LogBot.edit_last_msg("Userge has Started Successfully !")
+            LogBot.end()
             run(Userge.idle())
         _LOG.info(_LOG_STR, "Exiting Userge")
         for task in running_tasks:
             task.cancel()
         run(self.stop())
-        for task in asyncio.all_tasks():
-            task.cancel()
         run(loop.shutdown_asyncgens())
         loop.close()
