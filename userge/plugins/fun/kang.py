@@ -1,3 +1,5 @@
+""" kang stickers """
+
 # Copyright (C) 2020 by UsergeTeam@Github, < https://github.com/UsergeTeam >.
 #
 # This file is part of < https://github.com/UsergeTeam/Userge > project,
@@ -6,8 +8,8 @@
 #
 # All rights reserved.
 
+import io
 import os
-import math
 import random
 import urllib.request
 
@@ -19,14 +21,16 @@ from pyrogram.errors.exceptions.bad_request_400 import YouBlockedUser
 from userge import userge, Message, Config, pool
 
 
-@userge.on_cmd("kang", about={
-    'header': "kangs stickers or creates new ones",
-    'usage': "Reply {tr}kang [emoji('s)] [pack number] to a sticker or "
-             "an image to kang it to your userbot pack.",
-    'examples': ["{tr}kang", "{tr}kang 🤔", "{tr}kang 2", "{tr}kang 🤔 2"]})
+@userge.on_cmd(
+    "kang", about={
+        'header': "kangs stickers or creates new ones",
+        'usage': "Reply {tr}kang [emoji('s)] [pack number] to a sticker or "
+                 "an image to kang it to your userbot pack.",
+        'examples': ["{tr}kang", "{tr}kang 🤔", "{tr}kang 2", "{tr}kang 🤔 2"]},
+    allow_channels=False, allow_via_bot=False)
 async def kang_(message: Message):
-    """kang"""
-    user = message.from_user
+    """ kang a sticker """
+    user = await userge.get_me()
     if not user.username:
         user.username = user.first_name or user.id
     replied = message.reply_to_message
@@ -79,13 +83,13 @@ async def kang_(message: Message):
 
         @pool.run_in_thread
         def get_response():
-            response = urllib.request.urlopen(
+            response = urllib.request.urlopen(  # nosec
                 urllib.request.Request(f'http://t.me/addstickers/{packname}'))
             return response.read().decode("utf8").split('\n')
         htmlstr = await get_response()
         if ("  A <strong>Telegram</strong> user has created "
                 "the <strong>Sticker&nbsp;Set</strong>.") not in htmlstr:
-            async with userge.conversation('Stickers') as conv:
+            async with userge.conversation('Stickers', limit=30) as conv:
                 try:
                     await conv.send_message('/addsticker')
                 except YouBlockedUser:
@@ -166,14 +170,15 @@ async def kang_(message: Message):
                 await conv.get_response(mark_read=True)
         await message.edit(f"`Sticker kanged successfully!`\n"
                            f"Pack can be found [here](t.me/addstickers/{packname})")
-        os.remove(photo)
+        if os.path.exists(str(photo)):
+            os.remove(photo)
 
 
 @userge.on_cmd("stkrinfo", about={
     'header': "get sticker pack info",
     'usage': "reply {tr}stkrinfo to any sticker"})
 async def sticker_pack_info_(message: Message):
-    """get sticker pack info"""
+    """ get sticker pack info """
     replied = message.reply_to_message
     if not replied:
         await message.edit("`I can't fetch info from nothing, can I ?!`")
@@ -182,7 +187,7 @@ async def sticker_pack_info_(message: Message):
         await message.edit("`Reply to a sticker to get the pack details`")
         return
     await message.edit("`Fetching details of the sticker pack, please wait..`")
-    get_stickerset = await userge.send(
+    get_stickerset = await message.client.send(
         GetStickerSet(
             stickerset=InputStickerSetShortName(
                 short_name=replied.sticker.set_name)))
@@ -201,33 +206,18 @@ async def sticker_pack_info_(message: Message):
     await message.edit(out_str)
 
 
-def resize_photo(photo: str) -> str:
+def resize_photo(photo: str) -> io.BytesIO:
     """ Resize the given photo to 512x512 """
     image = Image.open(photo)
-    maxsize = (512, 512)
-    if (image.width and image.height) < 512:
-        size1 = image.width
-        size2 = image.height
-        if image.width > image.height:
-            scale = 512 / size1
-            size1new = 512
-            size2new = size2 * scale
-        else:
-            scale = 512 / size2
-            size1new = size1 * scale
-            size2new = 512
-        size1new = math.floor(size1new)
-        size2new = math.floor(size2new)
-        sizenew = (size1new, size2new)
-        image = image.resize(sizenew)
-    else:
-        image.thumbnail(maxsize)
+    maxsize = 512
+    scale = maxsize / max(image.width, image.height)
+    new_size = (int(image.width*scale), int(image.height*scale))
+    image = image.resize(new_size, Image.LANCZOS)
+    resized_photo = io.BytesIO()
+    resized_photo.name = "sticker.png"
+    image.save(resized_photo, "PNG")
     os.remove(photo)
-    photo = os.path.join(Config.DOWN_PATH, "sticker.png")
-    if os.path.exists(photo):
-        os.remove(photo)
-    image.save(photo, "PNG")
-    return photo
+    return resized_photo
 
 
 KANGING_STR = (
