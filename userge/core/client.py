@@ -10,23 +10,20 @@
 
 __all__ = ['Userge']
 
-import os
-import sys
 import time
 import asyncio
 import importlib
 from types import ModuleType
-from typing import List, Awaitable, Any, Optional
+from typing import List, Awaitable, Any, Optional, Union
 
-import psutil
+from pyrogram import idle
 
-from userge import logging, Config
-from userge import logbot
+from userge import logging, Config, logbot
 from userge.utils import time_formatter
 from userge.utils.exceptions import UsergeBotNotFound
 from userge.plugins import get_all_plugins
 from .methods import Methods
-from .ext import RawClient
+from .ext import RawClient, pool
 
 _LOG = logging.getLogger(__name__)
 _LOG_STR = "<<<!  #####  %s  #####  !>>>"
@@ -86,7 +83,7 @@ class _AbstractUserge(Methods, RawClient):
             try:
                 await self.load_plugin(name)
             except ImportError as i_e:
-                _LOG.error(_LOG_STR, i_e)
+                _LOG.error(_LOG_STR, f"[{name}] - {i_e}")
         await self.finalize_load()
         _LOG.info(_LOG_STR, f"Imported ({len(_IMPORTED)}) Plugins => "
                   + str([i.__name__ for i in _IMPORTED]))
@@ -106,22 +103,6 @@ class _AbstractUserge(Methods, RawClient):
         _LOG.info(_LOG_STR, f"Reloaded {len(reloaded)} Plugins => {reloaded}")
         await self.finalize_load()
         return len(reloaded)
-
-    async def restart(self, update_req: bool = False) -> None:  # pylint: disable=arguments-differ
-        """ Restart the AbstractUserge """
-        _LOG.info(_LOG_STR, "Restarting Userge")
-        await self.stop()
-        try:
-            c_p = psutil.Process(os.getpid())
-            for handler in c_p.open_files() + c_p.connections():
-                os.close(handler.fd)
-        except Exception as c_e:  # pylint: disable=broad-except
-            _LOG.error(_LOG_STR, c_e)
-        if update_req:
-            _LOG.info(_LOG_STR, "Installing Requirements...")
-            os.system("pip3 install -U pip && pip3 install -r requirements.txt")  # nosec
-        os.execl(sys.executable, sys.executable, '-m', 'userge')  # nosec
-        sys.exit()
 
 
 class _UsergeBot(_AbstractUserge):
@@ -154,14 +135,17 @@ class Userge(_AbstractUserge):
         super().__init__(**kwargs)
 
     @property
-    def bot(self) -> '_UsergeBot':
+    def bot(self) -> Union['_UsergeBot', 'Userge']:
         """ returns usergebot """
         if self._bot is None:
+            if Config.BOT_TOKEN:
+                return self
             raise UsergeBotNotFound("Need BOT_TOKEN ENV!")
         return self._bot
 
     async def start(self) -> None:
         """ start client and bot """
+        pool._start()  # pylint: disable=protected-access
         _LOG.info(_LOG_STR, "Starting Userge")
         await super().start()
         if self._bot is not None:
@@ -171,6 +155,7 @@ class Userge(_AbstractUserge):
 
     async def stop(self) -> None:  # pylint: disable=arguments-differ
         """ stop client and bot """
+        await pool._stop()  # pylint: disable=protected-access
         if self._bot is not None:
             _LOG.info(_LOG_STR, "Stopping UsergeBot")
             await self._bot.stop()
@@ -182,7 +167,6 @@ class Userge(_AbstractUserge):
         loop = asyncio.get_event_loop()
         run = loop.run_until_complete
         run(self.start())
-        loop = asyncio.get_event_loop()
         running_tasks: List[asyncio.Task] = []
         for task in self._tasks:
             running_tasks.append(loop.create_task(task()))
@@ -193,7 +177,7 @@ class Userge(_AbstractUserge):
             _LOG.info(_LOG_STR, "Idling Userge")
             logbot.edit_last_msg("Userge has Started Successfully !")
             logbot.end()
-            run(Userge.idle())
+            idle()
         _LOG.info(_LOG_STR, "Exiting Userge")
         for task in running_tasks:
             task.cancel()

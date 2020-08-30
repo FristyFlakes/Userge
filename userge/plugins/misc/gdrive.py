@@ -231,7 +231,7 @@ class _GDrive:
             c_time = time.time()
             response = None
             while response is None:
-                status, response = u_file_obj.next_chunk()
+                status, response = u_file_obj.next_chunk(num_retries=5)
                 if self._is_canceled:
                     raise ProcessCanceled
                 if status:
@@ -328,7 +328,7 @@ class _GDrive:
             c_time = time.time()
             done = False
             while done is False:
-                status, done = d_file_obj.next_chunk()
+                status, done = d_file_obj.next_chunk(num_retries=5)
                 if self._is_canceled:
                     raise ProcessCanceled
                 if status:
@@ -465,6 +465,7 @@ class _GDrive:
                 new_id = self._copy_dir(file_['id'], dir_id)
             else:
                 self._copy_file(file_['id'], parent_id)
+                time.sleep(0.5)  # due to user rate limits
                 new_id = parent_id
         return new_id
 
@@ -791,7 +792,7 @@ class Worker(_GDrive):
                         speed,
                         estimated_total_time)
                     count += 1
-                    if count >= 5:
+                    if count >= Config.EDIT_SLEEP_TIMEOUT:
                         count = 0
                         await self._message.try_to_edit(
                             progress_str, disable_web_page_preview=True)
@@ -816,7 +817,7 @@ class Worker(_GDrive):
             count += 1
             if self._message.process_is_canceled:
                 self._cancel()
-            if self._progress is not None and count >= 5:
+            if self._progress is not None and count >= Config.EDIT_SLEEP_TIMEOUT:
                 count = 0
                 await self._message.try_to_edit(self._progress)
             await asyncio.sleep(1)
@@ -846,7 +847,7 @@ class Worker(_GDrive):
             count += 1
             if self._message.process_is_canceled:
                 self._cancel()
-            if self._progress is not None and count >= 5:
+            if self._progress is not None and count >= Config.EDIT_SLEEP_TIMEOUT:
                 count = 0
                 await self._message.try_to_edit(self._progress)
             await asyncio.sleep(1)
@@ -877,7 +878,7 @@ class Worker(_GDrive):
             count += 1
             if self._message.process_is_canceled:
                 self._cancel()
-            if self._progress is not None and count >= 5:
+            if self._progress is not None and count >= Config.EDIT_SLEEP_TIMEOUT:
                 count = 0
                 await self._message.try_to_edit(self._progress)
             await asyncio.sleep(1)
