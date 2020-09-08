@@ -17,13 +17,13 @@ log() {
 }
 
 quit() {
-    local err="\t:: ERROR :: $1\nExiting With SIGTERM ..."
+    local err="\t:: ERROR :: $1\nExiting With SIGTERM (143) ..."
     if (( getMessageCount )); then
         replyLastMessage "$err"
     else
         log "$err"
     fi
-    exit 1
+    exit 143
 }
 
 runPythonCode() {
@@ -36,10 +36,19 @@ runPythonModule() {
 
 gitInit() {
     git init &> /dev/null
+    git commit --allow-empty -m "empty commit" &> /dev/null
 }
 
 gitClone() {
     git clone "$@" &> /dev/null
+}
+
+remoteIsExist() {
+    grep -q $1 < <(git remote)
+}
+
+addHeroku() {
+    git remote add heroku $HEROKU_GIT_URL
 }
 
 addUpstream() {

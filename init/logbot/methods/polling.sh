@@ -8,38 +8,12 @@
 #
 # All rights reserved.
 
-sendMessage() {
-    rawsendMessage $LOG_CHANNEL_ID "$1"
-}
-
-replyLastMessage() {
-    getLastMessage reply "$1"
-}
-
-editLastMessage() {
-    getLastMessage edit "$1"
-}
-
-deleteLastMessage() {
-    getLastMessage delete
-}
-
-deleteMessages() {
-    getMessageCount
-    local count=$(($?))
-    for ((i=0; i<$count; i++)); do
-        deleteLastMessage
-    done
-}
-
-printMessages() {
-    for msg in $(getAllMessages); do
-        printf "{%s: %s}\n" $msg "$($msg.print)"
-    done
-}
-
 startLogBotPolling() {
     test -z $BOT_TOKEN || _polling &
+}
+
+endLogBotPolling() {
+    test -z $BOT_TOKEN || echo quit >> logs/logbot.stdin
 }
 
 _polling() {
@@ -66,6 +40,7 @@ _polling() {
         sleep 1
     done
     log "LogBot Polling Ended with SIGTERM !"
+    rm -f $input
     exit 0
 }
 
