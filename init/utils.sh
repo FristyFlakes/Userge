@@ -8,7 +8,19 @@
 #
 # All rights reserved.
 
-declare -r pVer=$(sed -E 's/\w+ ([2-3])\.([0-9]+)\.([0-9]+)/\1.\2.\3/g' < <(python3.8 -V))
+declare -r minPVer=8
+declare -r maxPVer=10
+
+getPythonVersion() {
+    local -i count=$minPVer
+    local tmp
+    while true; do
+        tmp=$(python3.$count -V 2> /dev/null)
+        [[ -n $tmp || $count -gt $maxPVer ]] && break
+        count+=1
+    done
+    declare -gr pVer=$(sed -E 's/Python (3\.[0-9]{1,2}\.[0-9]{1,2}).*/\1/g' <<< $tmp)
+}
 
 log() {
     local text="$*"
@@ -36,7 +48,6 @@ runPythonModule() {
 
 gitInit() {
     git init &> /dev/null
-    git commit --allow-empty -m "empty commit" &> /dev/null
 }
 
 gitClone() {
@@ -63,6 +74,19 @@ fetchUpstream() {
     git fetch $UPSTREAM_REMOTE &> /dev/null
 }
 
+fetchBranches() {
+    local r_bs l_bs
+    r_bs=$(grep -oP '(?<=refs/heads/)\w+' < <(git ls-remote --heads $UPSTREAM_REMOTE))
+    l_bs=$(grep -oP '\w+' < <(git branch))
+    for r_b in $r_bs; do
+        [[ $l_bs =~ $r_b ]] || git branch $r_b $UPSTREAM_REMOTE/$r_b &> /dev/null
+    done
+}
+
+updateBuffer() {
+    git config http.postBuffer 524288000
+}
+
 upgradePip() {
     pip3 install -U pip &> /dev/null
 }
@@ -72,7 +96,7 @@ installReq() {
 }
 
 printLine() {
-    echo '-<- -<- -<- -<- -<- -<- -<- -<- -<- -<- -<- -<- -<- -<- -<-'
+    echo '->- ->- ->- ->- ->- ->- ->- --- -<- -<- -<- -<- -<- -<- -<-'
 }
 
 printLogo() {
